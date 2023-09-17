@@ -128,7 +128,7 @@ template("gcc_toolchain") {
         # The depfile generated on an RBE worker can contain absolute paths.
         # This sed command strips off the prefix, and rewrites to be
         # relative to the buildroot.
-        command += " && sed -i 's@/b/f/w@../..@g' $depfile"
+        command += " && sed -i'' -e 's@/b/f/w@../..@g' $depfile"
       }
       depsformat = "gcc"
       description = "CC {{output}}"
@@ -140,7 +140,7 @@ template("gcc_toolchain") {
       depfile = "{{output}}.d"
       command = "$cxx -MD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}}  $coverage_flags -c {{source}} -o {{output}}"
       if (use_rbe) {
-        command += " && sed -i 's@/b/f/w@../..@g' $depfile"
+        command += " && sed -i'' -e 's@/b/f/w@../..@g' $depfile"
       }
       depsformat = "gcc"
       description = "CXX {{output}}"
@@ -152,7 +152,7 @@ template("gcc_toolchain") {
       depfile = "{{output}}.d"
       command = "$asm -MD -MF $depfile {{defines}} {{include_dirs}} {{asmflags}} {{cflags}} {{cflags_c}} $coverage_flags -c {{source}} -o {{output}}"
       if (use_rbe) {
-        command += " && sed -i 's@/b/f/w@../..@g' $depfile"
+        command += " && sed -i'' -e 's@/b/f/w@../..@g' $depfile"
       }
       depsformat = "gcc"
       description = "ASM {{output}}"
