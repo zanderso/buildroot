@@ -26,6 +26,7 @@ if (use_goma) {
   cxx_prefix = "$goma_dir/gomacc "
   objc_prefix = "$goma_dir/gomacc "
   link_prefix = "$goma_dir/gomacc "
+  clang_tidy_prefix = ""
 } else if (use_rbe) {
   compiler_args = rewrapper_command + [
     "--labels=type=compile,compiler=clang,lang=cpp ",
@@ -33,13 +34,18 @@ if (use_goma) {
   link_args = rewrapper_command + [
     "--labels=type=link,tool=clang ",
   ]
+  clang_tidy_args = rewrapper_command + [
+    "--labels=type=lint,tool=clang-tidy,lang=cpp ",
+  ]
   cxx_prefix = string_join(" ", compiler_args)
-  objc_prefix = ""
   link_prefix = "" #string_join(" ", link_args)
+  clang_tidy_prefix = string_join(" ", clang_tidy_args)
+  objc_prefix = string_join(" ", compiler_args) #""
 } else {
   cxx_prefix = ""
   objc_prefix = ""
   link_prefix = ""
+  clang_tidy_prefix = ""
 }
 
 # Shared toolchain definition. Invocations should set toolchain_os to set the
@@ -49,6 +55,7 @@ template("mac_toolchain") {
     assert(defined(invoker.asm), "mac_toolchain() must specify a \"asm\" value")
     assert(defined(invoker.cc), "mac_toolchain() must specify a \"cc\" value")
     assert(defined(invoker.cxx), "mac_toolchain() must specify a \"cxx\" value")
+    assert(defined(invoker.clang_tidy), "mac_toolchain() must specify a \"clang_tidy\" value")
     assert(defined(invoker.objc), "mac_toolchain() must specify a \"objc\" value")
     assert(defined(invoker.ld), "mac_toolchain() must specify a \"ld\" value")
     assert(defined(invoker.ar), "mac_toolchain() must specify a \"ar\" value")
@@ -65,15 +72,8 @@ template("mac_toolchain") {
     cc = invoker.cc
     cxx = invoker.cxx
     objc = invoker.objc
+    clang_tidy = invoker.clang_tidy
     ld = invoker.ld
-
-    if (use_clang_static_analyzer) {
-      analyzer_wrapper =
-          rebase_path("//build/toolchain/clang_static_analyzer_wrapper.py",
-                      root_build_dir) + "  --mode=clang"
-      cc = analyzer_wrapper + " ${cc}"
-      cxx = analyzer_wrapper + " ${cxx}"
-    }
 
     # Make these apply to all tools below.
     lib_switch = "-l"
@@ -92,7 +92,14 @@ template("mac_toolchain") {
 
     tool("cc") {
       depfile = "{{output}}.d"
-      command = "$cc -MD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_c}} $sysroot_flags $coverage_flags -c {{source}} -o {{output}}"
+      flags = "{{defines}} {{include_dirs}} {{cflags}} {{cflags_c}} $sysroot_flags $coverage_flags -c {{source}} -o {{output}}"
+      compile_cmd = "$cc -MD -MF $depfile " + flags
+      clang_tidy_cmd = "$clang_tidy {{source}} --warnings-as-errors=* -- -MD {{defines}} {{include_dirs}} {{cflags}} {{cflags_c}} $sysroot_flags $coverage_flags"
+      command = compile_cmd
+      if (enable_clang_tidy) {
+        command = "($command & $clang_tidy_cmd & wait)"
+      }
+      #command = "$cc -MD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_c}} $sysroot_flags $coverage_flags -c {{source}} -o {{output}}"
       if (use_rbe) {
         command += " && sed -i'' -e 's@/b/f/w@../..@g' $depfile"
       }
@@ -104,7 +111,14 @@ template("mac_toolchain") {
 
     tool("cxx") {
       depfile = "{{output}}.d"
-      command = "$cxx -MD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}} $sysroot_flags $coverage_flags -c {{source}} -o {{output}}"
+      flags = "{{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}} $sysroot_flags $coverage_flags -c {{source}} -o {{output}}"
+      compile_cmd = "$cxx -MD -MF $depfile " + flags
+      clang_tidy_cmd = "$clang_tidy {{source}} --warnings-as-errors=* -- -MD {{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}} $sysroot_flags $coverage_flags"
+      command = compile_cmd
+      if (enable_clang_tidy) {
+        command = "($command & $clang_tidy_cmd & wait)"
+      }
+      #command = "$cxx -MD -MF $depfile {{defines}} {{include_dirs}} {{cflags}} {{cflags_cc}} $sysroot_flags $coverage_flags -c {{source}} -o {{output}}"
       if (use_rbe) {
         command += " && sed -i'' -e 's@/b/f/w@../..@g' $depfile"
       }
@@ -254,6 +268,7 @@ mac_toolchain("ios_clang_arm") {
   asm = "${prefix}/clang"
   cc = "${cxx_prefix}${prefix}/clang"
   cxx = "${cxx_prefix}${prefix}/clang++"
+  clang_tidy = "${clang_tidy_prefix}${prefix}/clang-tidy"
   objc = "${objc_prefix}${prefix}/clang++"
   ld = "${link_prefix}${prefix}/clang++"
   is_clang = true
@@ -271,6 +286,7 @@ mac_toolchain("ios_clang_arm_sim") {
   asm = "${prefix}/clang"
   cc = "${cxx_prefix}${prefix}/clang"
   cxx = "${cxx_prefix}${prefix}/clang++"
+  clang_tidy = "${clang_tidy_prefix}${prefix}/clang-tidy"
   objc = "${objc_prefix}${prefix}/clang++"
   ld = "${link_prefix}${prefix}/clang++"
   is_clang = true
@@ -288,6 +304,7 @@ mac_toolchain("ios_clang_x64_sim") {
   asm = "${prefix}/clang"
   cc = "${cxx_prefix}${prefix}/clang"
   cxx = "${cxx_prefix}${prefix}/clang++"
+  clang_tidy = "${clang_tidy_prefix}${prefix}/clang-tidy"
   objc = "${objc_prefix}${prefix}/clang++"
   ld = "${link_prefix}${prefix}/clang++"
   is_clang = true
@@ -305,6 +322,7 @@ mac_toolchain("clang_x64") {
   asm = "${prefix}/clang"
   cc = "${cxx_prefix}${prefix}/clang"
   cxx = "${cxx_prefix}${prefix}/clang++"
+  clang_tidy = "${clang_tidy_prefix}${prefix}/clang-tidy"
   objc = "${objc_prefix}${prefix}/clang++"
   ld = "${link_prefix}${prefix}/clang++"
   is_clang = true
@@ -323,6 +341,7 @@ mac_toolchain("clang_arm64") {
   asm = "${prefix}/clang"
   cc = "${cxx_prefix}${prefix}/clang"
   cxx = "${cxx_prefix}${prefix}/clang++"
+  clang_tidy = "${clang_tidy_prefix}${prefix}/clang-tidy"
   objc = "${objc_prefix}${prefix}/clang++"
   ld = "${link_prefix}${prefix}/clang++"
   is_clang = true
